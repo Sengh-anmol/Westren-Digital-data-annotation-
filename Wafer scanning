@@ -1,0 +1,15 @@
+import cv2
+import mysql.connector
+
+def scan_wafer(image_path, wafer_id):
+    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    dimensions = img.shape  # (height, width)
+    defects = len(cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0])  # Example defect count
+    conn = mysql.connector.connect(host='localhost', user='tesla_user', password='secure_password', database='wafer_data')
+    cursor = conn.cursor()
+    query = "INSERT INTO wafer_scan (wafer_id, width, height, defect_count) VALUES (%s, %s, %s, %s)"
+    cursor.execute(query, (wafer_id, dimensions[1], dimensions[0], defects))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print(f"Scanned wafer {wafer_id}: {dimensions}, {defects} defects.")
