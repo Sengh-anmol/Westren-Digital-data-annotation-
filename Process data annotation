@@ -1,0 +1,39 @@
+from azure.kusto.data import KustoClient, KustoConnectionStringBuilder
+import pandas as pd
+import mysql.connector
+
+def annotate_wafer_data(wafer_id):
+    # Extract data from MySQL
+    conn = mysql.connector.connect(host='localhost', user='tesla_user', password='secure_password', database='wafer_data')
+    query = """
+    SELECT s.wafer_id, s.width, s.height, s.defect_count, p.thickness
+    FROM wafer_scan s
+    JOIN plating_log p ON s.wafer_id = p.wafer_id
+    WHERE s.wafer_id = %s
+    """
+    df = pd.read_sql(query, conn, params=(wafer_id,))
+    conn.close()
+
+    # Load data into ADX
+    kcsb = KustoConnectionStringBuilder.with_aad_application_key_authentication(
+        "https://yourcluster.kusto.windows.net", "app_id", "app_key", "authority_id"
+    )
+    client = KustoClient(kcsb)
+    db = "wafer_database"
+    table = "wafer_annotations"
+    client.execute(db, f".ingest inline into table {table} <| {df.to_csv(index=False)}")
+
+    # Annotate data in ADX using KQL
+    kql_query = f"""
+    {table}
+    | where wafer_id == '{wafer_id}'
+    | extend quality = case(
+        defect_count < 5 and thickness >= 0.5, 'High',
+        defect_count < 10 and thickness >= 0.3, 'Medium',
+        'Low'
+    )
+    """
+    response = client.execute(db, kql_query)
+    annotated_data = pd.DataFrame(response.primary_results[0])
+    print(f"Annotated data for wafer {wafer_id}:\n{annotated_data}")
+    return annotated_data
